@@ -4,9 +4,9 @@
 // TODO improve the organization of the exports/visibility
 use embedded_hal::blocking::delay;
 pub mod bus;
-mod common;
+pub mod common;
 pub mod devices;
-mod driver;
+pub mod driver;
 mod macros;
 pub mod modules;
 pub use common::*;
