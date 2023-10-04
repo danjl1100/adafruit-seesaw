@@ -1,4 +1,5 @@
 use crate::{driver::Driver, DriverExt, Modules, Reg, SeesawDevice};
+use embedded_hal::delay::DelayUs;
 
 const STATUS_HW_ID: &Reg = &[Modules::Status.into_u8(), 0x01];
 const STATUS_VERSION: &Reg = &[Modules::Status.into_u8(), 0x02];
@@ -37,7 +38,7 @@ pub trait StatusModule<D: Driver>: SeesawDevice<Driver = D> {
 
         self.driver()
             .write_u8(addr, STATUS_SWRST, 0xFF)
-            .map(|_| self.driver().delay_us(125_000))
+            .map(|_| self.driver().delay().delay_us(125_000))
             .map_err(crate::SeesawError::I2c)
     }
 

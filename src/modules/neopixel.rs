@@ -3,6 +3,7 @@ use crate::{
     driver::Driver,
     DriverExt, SeesawDevice, SeesawError,
 };
+use embedded_hal::delay::DelayUs;
 
 /// WO - 8 bits
 /// This register sets the pin number (PORTA) that is used for the NeoPixel
@@ -37,10 +38,10 @@ pub trait NeopixelModule<D: Driver>: SeesawDevice<Driver = D> {
         self.driver()
             .write_u8(addr, SET_PIN, Self::PIN)
             .and_then(|_| {
-                self.driver().delay_us(10_000);
+                self.driver().delay().delay_us(10_000);
                 self.driver().write_u16(addr, SET_LEN, 3 * Self::N_LEDS)
             })
-            .map(|_| self.driver().delay_us(10_000))
+            .map(|_| self.driver().delay().delay_us(10_000))
             .map_err(SeesawError::I2c)
     }
 
@@ -56,7 +57,7 @@ pub trait NeopixelModule<D: Driver>: SeesawDevice<Driver = D> {
                     NeopixelSpeed::Khz800 => 1,
                 },
             )
-            .map(|_| self.driver().delay_us(10_000))
+            .map(|_| self.driver().delay().delay_us(10_000))
             .map_err(SeesawError::I2c)
     }
 
@@ -108,7 +109,7 @@ pub trait NeopixelModule<D: Driver>: SeesawDevice<Driver = D> {
 
         self.driver()
             .register_write(addr, SHOW, &[])
-            .map(|_| self.driver().delay_us(125))
+            .map(|_| self.driver().delay().delay_us(125))
             .map_err(SeesawError::I2c)
     }
 }

@@ -2,8 +2,7 @@
 #![allow(const_evaluatable_unchecked, incomplete_features)]
 #![feature(array_try_map, generic_const_exprs)]
 // TODO improve the organization of the exports/visibility
-use embedded_hal::blocking::delay;
-pub mod bus;
+use embedded_hal::delay::DelayUs;
 mod common;
 pub mod devices;
 mod driver;
@@ -22,26 +21,36 @@ pub mod prelude {
     };
 }
 
-pub type SeesawSingleThread<BUS> = Seesaw<shared_bus::NullMutex<BUS>>;
-
-pub struct Seesaw<M> {
-    mutex: M,
+pub struct Seesaw<DELAY, I2C> {
+    delay: DELAY,
+    i2c: I2C,
 }
 
-impl<DELAY, I2C, M> Seesaw<M>
+impl<DELAY, I2C> Seesaw<DELAY, I2C>
 where
-    DELAY: delay::DelayUs<u32>,
+    DELAY: DelayUs,
     I2C: I2cDriver,
-    M: shared_bus::BusMutex<Bus = bus::Bus<DELAY, I2C>>,
 {
     pub fn new(delay: DELAY, i2c: I2C) -> Self {
-        Seesaw {
-            mutex: M::create(bus::Bus(delay, i2c)),
-        }
+        Seesaw { delay, i2c }
+    }
+}
+
+impl<DELAY, I2C> Driver for Seesaw<DELAY, I2C>
+where
+    DELAY: DelayUs,
+    I2C: I2cDriver,
+{
+    type Delay = DELAY;
+    type I2c = I2C;
+    type I2cError = I2C::Error;
+
+    fn delay(&mut self) -> &mut Self::Delay {
+        &mut self.delay
     }
 
-    pub fn acquire_driver(&self) -> bus::BusProxy<'_, M> {
-        bus::BusProxy { mutex: &self.mutex }
+    fn i2c(&mut self) -> &mut Self::I2c {
+        &mut self.i2c
     }
 }
 

@@ -1,26 +1,48 @@
 use crate::common::Reg;
-use embedded_hal::blocking::{delay, i2c};
+use embedded_hal::{
+    delay::{self, DelayUs},
+    i2c::{self, I2c},
+};
 
 const DELAY_TIME: u32 = 125;
 
 /// Blanket trait for something that implements I2C bus operations, with a
 /// combined Error associated type
 #[doc(hidden)]
-pub trait I2cDriver: i2c::Write + i2c::WriteRead + i2c::Read {
-    type I2cError: From<<Self as i2c::Write>::Error>
-        + From<<Self as i2c::WriteRead>::Error>
-        + From<<Self as i2c::Read>::Error>;
+pub trait I2cDriver: i2c::I2c {
+    type I2cError: From<Self::Error>;
 }
 
-impl<T, E> I2cDriver for T
+impl<T> I2cDriver for T
 where
-    T: i2c::Write<Error = E> + i2c::WriteRead<Error = E> + i2c::Read<Error = E>,
+    T: i2c::I2c,
 {
-    type I2cError = E;
+    type I2cError = T::Error;
 }
 
-pub trait Driver: I2cDriver + delay::DelayUs<u32> {}
-impl<T> Driver for T where T: I2cDriver + delay::DelayUs<u32> {}
+pub trait Driver {
+    type I2cError: From<<Self::I2c as i2c::ErrorType>::Error>;
+    type I2c: I2cDriver;
+    type Delay: delay::DelayUs;
+    fn i2c(&mut self) -> &mut Self::I2c;
+    fn delay(&mut self) -> &mut Self::Delay;
+}
+impl<T> Driver for T
+where
+    T: I2cDriver + delay::DelayUs,
+{
+    type Delay = Self;
+    type I2c = Self;
+    type I2cError = <T as i2c::ErrorType>::Error;
+
+    fn i2c(&mut self) -> &mut Self::I2c {
+        self
+    }
+
+    fn delay(&mut self) -> &mut Self::Delay {
+        self
+    }
+}
 
 macro_rules! impl_integer_write {
     ($fn:ident $nty:tt) => {
@@ -89,9 +111,9 @@ impl<T: Driver> DriverExt for T {
         reg: &Reg,
     ) -> Result<[u8; N], Self::Error> {
         let mut buffer = [0u8; N];
-        self.write(addr, reg)?;
-        self.delay_us(DELAY_TIME);
-        self.read(addr, &mut buffer)?;
+        self.i2c().write(addr, reg)?;
+        self.delay().delay_us(DELAY_TIME);
+        self.i2c().read(addr, &mut buffer)?;
         Ok(buffer)
     }
 
@@ -108,8 +130,8 @@ impl<T: Driver> DriverExt for T {
         buffer[0..2].copy_from_slice(reg);
         buffer[2..].copy_from_slice(bytes);
 
-        self.write(addr, &buffer)?;
-        self.delay_us(DELAY_TIME);
+        self.i2c().write(addr, &buffer)?;
+        self.delay().delay_us(DELAY_TIME);
         Ok(())
     }
 }

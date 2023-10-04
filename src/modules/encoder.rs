@@ -3,6 +3,7 @@ use crate::{
     common::{Modules, Reg},
     DriverExt,
 };
+use embedded_hal::delay::DelayUs;
 
 #[allow(dead_code)]
 const STATUS: &Reg = &[Modules::Encoder.into_u8(), 0x00];
@@ -16,7 +17,7 @@ pub trait EncoderModule<D: crate::Driver>: GpioModule<D> {
 
     fn enable_button(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
         self.set_pin_mode(Self::ENCODER_BTN_PIN, PinMode::InputPullup)
-            .map(|_| self.driver().delay_us(125))
+            .map(|_| self.driver().delay().delay_us(125))
     }
 
     fn button(&mut self) -> Result<bool, crate::SeesawError<D::I2cError>> {
