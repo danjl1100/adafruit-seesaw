@@ -30,6 +30,15 @@ macro_rules! seesaw_device {
             pub const fn product_id() -> u16 {
                 $product_id
             }
+            pub fn new(addr: u8) -> Self {
+                Self(addr, ())
+            }
+            pub fn new_with_default_addr() -> Self {
+                Self(Self::default_addr(), ())
+            }
+            pub fn with_driver<D: $crate::Driver>(&self, driver: D) -> $name<D> {
+                $name(self.0, driver)
+            }
         }
 
         impl<D: $crate::Driver> $crate::SeesawDevice for $name<D> {
@@ -47,13 +56,13 @@ macro_rules! seesaw_device {
                 &mut self.1
             }
 
-            fn new(addr: u8, driver: D) -> Self {
-                Self(addr, driver)
-            }
+            // fn new(addr: u8, driver: D) -> Self {
+            //     Self(addr, driver)
+            // }
 
-            fn new_with_default_addr(driver: D) -> Self {
-                Self(Self::DEFAULT_ADDR, driver)
-            }
+            // fn new_with_default_addr(driver: D) -> Self {
+            //     Self(Self::DEFAULT_ADDR, driver)
+            // }
         }
 
         $(

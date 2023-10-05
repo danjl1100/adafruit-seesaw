@@ -22,12 +22,13 @@ fn main() -> ! {
     let delay = cp.SYST.delay(&clocks);
     let scl = gpiob.pb6.into_alternate_open_drain::<4>();
     let sda = gpiob.pb7.into_alternate_open_drain::<4>();
-    let i2c = I2c::new(dp.I2C1, (scl, sda), 400.kHz(), &clocks);
+    let mut i2c = I2c::new(dp.I2C1, (scl, sda), 400.kHz(), &clocks);
     // NOTE: use external library (e.g. embedded-hal-bus) to create I2c bus
     //
     // let bus = shared_bus::BusManagerSimple::new(i2c);
-    let seesaw = Seesaw::new(delay, i2c);
-    let mut device = GenericDevice::new_with_default_addr(seesaw)
+    let mut seesaw = Seesaw::new(delay);
+    let mut device = GenericDevice::new_with_default_addr()
+        .with_driver(seesaw.borrow_i2c(&mut i2c))
         .init()
         .expect("Failed to init generic device");
 

@@ -2,8 +2,10 @@
 #![allow(const_evaluatable_unchecked, incomplete_features)]
 #![feature(array_try_map, generic_const_exprs)]
 #![feature(async_fn_in_trait)]
-// TODO improve the organization of the exports/visibility
+
 use embedded_hal::delay::DelayUs;
+
+// TODO improve the organization of the exports/visibility
 mod common;
 pub mod devices;
 mod driver;
@@ -22,32 +24,32 @@ pub mod prelude {
     };
 }
 
-pub struct Seesaw<DELAY, I2C> {
+pub struct Seesaw<DELAY> {
     delay: DELAY,
-    i2c: I2C,
+}
+pub struct SeesawBorrowed<'a, DELAY, I2C> {
+    delay: &'a mut DELAY,
+    i2c: &'a mut I2C,
 }
 
-impl<DELAY, I2C> Seesaw<DELAY, I2C>
+impl<DELAY> Seesaw<DELAY>
 where
     DELAY: DelayUs,
-    I2C: I2cDriver,
 {
-    pub fn new(delay: DELAY, i2c: I2C) -> Self {
-        Seesaw { delay, i2c }
+    pub fn new(delay: DELAY) -> Self {
+        Seesaw { delay }
+    }
+
+    pub fn borrow_i2c<'a, I2C: I2cDriver>(
+        &'a mut self,
+        i2c: &'a mut I2C,
+    ) -> SeesawBorrowed<'a, DELAY, I2C> {
+        let Self { delay, .. } = self;
+        SeesawBorrowed { delay, i2c }
     }
 }
 
-impl<DELAY, I2C> Seesaw<DELAY, I2C>
-where
-    DELAY: DelayAsync,
-    I2C: I2cDriverAsync,
-{
-    pub fn new_async(delay: DELAY, i2c: I2C) -> Self {
-        Seesaw { delay, i2c }
-    }
-}
-
-impl<DELAY, I2C> Driver for Seesaw<DELAY, I2C>
+impl<DELAY, I2C> Driver for SeesawBorrowed<'_, DELAY, I2C>
 where
     DELAY: DelayUs,
     I2C: I2cDriver,
@@ -65,7 +67,7 @@ where
     }
 }
 
-impl<DELAY, I2C> DriverAsync for Seesaw<DELAY, I2C>
+impl<DELAY, I2C> DriverAsync for SeesawBorrowed<'_, DELAY, I2C>
 where
     DELAY: DelayAsync,
     I2C: I2cDriverAsync,
@@ -107,9 +109,9 @@ pub trait SeesawDevice {
 
     fn driver(&mut self) -> &mut Self::Driver;
 
-    fn new(addr: u8, driver: Self::Driver) -> Self;
+    // fn new(addr: u8, driver: Self::Driver) -> Self;
 
-    fn new_with_default_addr(driver: Self::Driver) -> Self;
+    // fn new_with_default_addr(driver: Self::Driver) -> Self;
 }
 
 /// At startup, Seesaw devices typically have a unique set of initialization

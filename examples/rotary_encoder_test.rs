@@ -18,10 +18,11 @@ fn main() -> ! {
     let delay = cp.SYST.delay(&clocks);
     let scl = gpiob.pb6.into_alternate_open_drain::<4>();
     let sda = gpiob.pb7.into_alternate_open_drain::<4>();
-    let i2c = I2c::new(dp.I2C1, (scl, sda), 400.kHz(), &clocks);
-    let seesaw = Seesaw::new(delay, i2c);
+    let mut i2c = I2c::new(dp.I2C1, (scl, sda), 400.kHz(), &clocks);
+    let mut seesaw = Seesaw::new(delay);
     rprintln!("Seesaw created");
-    let mut encoder = RotaryEncoder::new_with_default_addr(seesaw)
+    let mut encoder = RotaryEncoder::new_with_default_addr()
+        .with_driver(seesaw.borrow_i2c(&mut i2c))
         .init()
         .expect("Failed to start RotaryEncoder");
 

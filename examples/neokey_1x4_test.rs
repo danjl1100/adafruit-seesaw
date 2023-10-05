@@ -20,9 +20,10 @@ fn main() -> ! {
     let delay = cp.SYST.delay(&clocks);
     let scl = gpiob.pb6.into_alternate_open_drain::<4>();
     let sda = gpiob.pb7.into_alternate_open_drain::<4>();
-    let i2c = I2c::new(dp.I2C1, (scl, sda), 100.kHz(), &clocks);
-    let seesaw = Seesaw::new(delay, i2c);
-    let mut neokeys = NeoKey1x4::new_with_default_addr(seesaw)
+    let mut i2c = I2c::new(dp.I2C1, (scl, sda), 100.kHz(), &clocks);
+    let mut seesaw = Seesaw::new(delay);
+    let mut neokeys = NeoKey1x4::new_with_default_addr()
+        .with_driver(seesaw.borrow_i2c(&mut i2c))
         .init()
         .expect("Failed to start NeoKey1x4");
 
