@@ -37,6 +37,16 @@ where
     }
 }
 
+impl<DELAY, I2C> Seesaw<DELAY, I2C>
+where
+    DELAY: DelayAsync,
+    I2C: I2cDriverAsync,
+{
+    pub fn new_async(delay: DELAY, i2c: I2C) -> Self {
+        Seesaw { delay, i2c }
+    }
+}
+
 impl<DELAY, I2C> Driver for Seesaw<DELAY, I2C>
 where
     DELAY: DelayUs,
@@ -52,6 +62,23 @@ where
 
     fn i2c(&mut self) -> &mut Self::I2c {
         &mut self.i2c
+    }
+}
+
+impl<DELAY, I2C> DriverAsync for Seesaw<DELAY, I2C>
+where
+    DELAY: DelayAsync,
+    I2C: I2cDriverAsync,
+{
+    type I2c = I2C;
+    type I2cError = I2C::Error;
+
+    fn i2c(&mut self) -> &mut Self::I2c {
+        &mut self.i2c
+    }
+
+    async fn delay(&mut self, duration_micros: u32) {
+        self.delay.delay(duration_micros).await;
     }
 }
 
@@ -96,4 +123,8 @@ where
     Self: Sized,
 {
     fn init(self) -> Result<Self, Self::Error>;
+}
+
+pub trait DelayAsync {
+    async fn delay(&mut self, duration_micros: u32);
 }
