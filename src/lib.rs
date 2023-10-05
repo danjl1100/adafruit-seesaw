@@ -1,6 +1,7 @@
 #![no_std]
 #![allow(const_evaluatable_unchecked, incomplete_features)]
 #![feature(array_try_map, generic_const_exprs)]
+#![feature(async_fn_in_trait)]
 // TODO improve the organization of the exports/visibility
 use embedded_hal::delay::DelayUs;
 mod common;
@@ -60,6 +61,11 @@ pub enum SeesawError<E> {
     I2c(E),
     /// Occurs when an invalid hardware ID is read
     InvalidHardwareId(u8),
+}
+impl<E> From<E> for SeesawError<E> {
+    fn from(value: E) -> Self {
+        Self::I2c(value)
+    }
 }
 
 pub trait SeesawDevice {
