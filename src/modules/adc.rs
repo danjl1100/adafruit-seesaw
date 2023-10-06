@@ -1,6 +1,7 @@
 use crate::{
     common::{Modules, Reg},
-    DriverExt, DriverExtAsync, HardwareId,
+    maybe_async, Driver, DriverAsync, DriverExt, DriverExtAsync, HardwareId, SeesawDevice,
+    SeesawDeviceAsync,
 };
 
 /// RO - 8 bits
@@ -41,41 +42,54 @@ const WINTHRESH: &Reg = &[Modules::Adc.into_u8(), 0x05];
 /// ADC value for channel 0
 const CHANNEL_0: &Reg = &[Modules::Adc.into_u8(), 0x07];
 
-// TODO: consider macro def, to textually inline the pin_offset again
-/// The ADC provides the ability to measure analog voltages at 10-bit
-/// resolution. The SAMD09 seesaw has 4 ADC inputs, the Attiny8x7 has 11 ADC
-/// inputs.
-///
-/// The module base register address for the ADC is 0x09
-///
-/// Conversions can be read by reading the corresponding CHANNEL register.
-///
-/// When reading ADC data, there should be at least a 500 uS delay between
-/// writing the register number you would like to read from and attempting to
-/// read the data.
-///
-/// Allow a delay of at least 1ms in between sequential ADC reads on different
-/// channels.
-pub trait AdcModule<D: crate::Driver>: crate::SeesawDevice<Driver = D> {
-    fn analog_read(&mut self, pin: u8) -> Result<u16, crate::SeesawError<D::I2cError>> {
-        let pin_offset = pin_offset(Self::HARDWARE_ID, pin);
+macro_rules! adc_module_def {
+    (
+        for $async:ident;
+        adc_module { $name:ident < $driver:path > }
+        seesaw_device { $seesaw_device:ident }
+    ) => {
+        /// The ADC provides the ability to measure analog voltages at 10-bit
+        /// resolution. The SAMD09 seesaw has 4 ADC inputs, the Attiny8x7 has 11 ADC
+        /// inputs.
+        ///
+        /// The module base register address for the ADC is 0x09
+        ///
+        /// Conversions can be read by reading the corresponding CHANNEL register.
+        ///
+        /// When reading ADC data, there should be at least a 500 uS delay between
+        /// writing the register number you would like to read from and attempting to
+        /// read the data.
+        ///
+        /// Allow a delay of at least 1ms in between sequential ADC reads on different
+        /// channels.
+        pub trait $name<D: $driver>: $seesaw_device<Driver = D> {
+            maybe_async! {
+                $async @fn analog_read(
+                    &mut self,
+                    pin: u8,
+                ) -> Result<u16, crate::SeesawError<D::I2cError>> {
+                    let pin_offset = pin_offset(Self::HARDWARE_ID, pin);
 
-        let addr = self.addr();
-        self.driver()
-            .read_u16(addr, &[CHANNEL_0[0], CHANNEL_0[1] + pin_offset])
-            .map_err(crate::SeesawError::I2c)
-    }
+                    let addr = self.addr();
+                    let analog = maybe_async!(
+                            self.driver()
+                                .read_u16(addr, &[CHANNEL_0[0], CHANNEL_0[1] + pin_offset])
+                        => $async.await)?;
+                    Ok(analog)
+                }
+            }
+        }
+    };
 }
-pub trait AdcModuleAsync<D: crate::DriverAsync>: crate::SeesawDeviceAsync<Driver = D> {
-    async fn analog_read(&mut self, pin: u8) -> Result<u16, crate::SeesawError<D::I2cError>> {
-        let pin_offset = pin_offset(Self::HARDWARE_ID, pin);
-
-        let addr = self.addr();
-        self.driver()
-            .read_u16(addr, &[CHANNEL_0[0], CHANNEL_0[1] + pin_offset])
-            .await
-            .map_err(crate::SeesawError::I2c)
-    }
+adc_module_def! {
+    for blocking;
+    adc_module { AdcModule<Driver> }
+    seesaw_device { SeesawDevice }
+}
+adc_module_def! {
+    for async;
+    adc_module { AdcModuleAsync<DriverAsync> }
+    seesaw_device { SeesawDeviceAsync }
 }
 
 fn pin_offset(hardware_id: HardwareId, pin: u8) -> u8 {

@@ -1,7 +1,7 @@
 use crate::{
     common::{Modules, Reg},
-    driver::Driver,
-    DriverExt, SeesawDevice, SeesawError,
+    maybe_async, DelayAsync, Driver, DriverAsync, DriverExt, DriverExtAsync, SeesawDevice,
+    SeesawDeviceAsync, SeesawError,
 };
 use embedded_hal::delay::DelayUs;
 
@@ -26,91 +26,129 @@ const SET_BUF: &Reg = &[Modules::Neopixel.into_u8(), 0x04];
 /// arguments/data after the command.
 const SHOW: &Reg = &[Modules::Neopixel.into_u8(), 0x05];
 
-pub trait NeopixelModule<D: Driver>: SeesawDevice<Driver = D> {
-    const PIN: u8;
+macro_rules! neopixel_def {
+    (
+        for $async:ident;
+        neopixel { $name:ident < $driver:ident > }
+        seesaw_device { $seesaw_device:ident }
+    ) => {
+        pub trait $name<D: $driver>: $seesaw_device<Driver = D> {
+            const PIN: u8;
 
-    /// The number of neopixels on the device
-    const N_LEDS: u16 = 1;
+            /// The number of neopixels on the device
+            const N_LEDS: u16 = 1;
 
-    fn enable_neopixel(&mut self) -> Result<(), SeesawError<D::I2cError>> {
-        let addr = self.addr();
+            maybe_async! {
 
-        self.driver()
-            .write_u8(addr, SET_PIN, Self::PIN)
-            .and_then(|_| {
-                self.driver().delay().delay_us(10_000);
-                self.driver().write_u16(addr, SET_LEN, 3 * Self::N_LEDS)
-            })
-            .map(|_| self.driver().delay().delay_us(10_000))
-            .map_err(SeesawError::I2c)
-    }
+                $async @fn enable_neopixel(&mut self) -> Result<(), SeesawError<D::I2cError>> {
+                    let addr = self.addr();
 
-    fn set_neopixel_speed(&mut self, speed: NeopixelSpeed) -> Result<(), SeesawError<D::I2cError>> {
-        let addr = self.addr();
+                    maybe_async!(
+                            self.driver()
+                                .write_u8(addr, SET_PIN, Self::PIN)
+                        => $async.await)?;
+                    maybe_async!(
+                            self.driver().delay().delay_us(10_000)
+                        => $async.await);
+                    maybe_async!(
+                            self.driver().write_u16(addr, SET_LEN, 3 * Self::N_LEDS)
+                        => $async.await)?;
+                    maybe_async!(
+                            self.driver().delay().delay_us(10_000)
+                        => $async.await);
+                    Ok(())
+                }
 
-        self.driver()
-            .write_u8(
-                addr,
-                SET_SPEED,
-                match speed {
-                    NeopixelSpeed::Khz400 => 0,
-                    NeopixelSpeed::Khz800 => 1,
-                },
-            )
-            .map(|_| self.driver().delay().delay_us(10_000))
-            .map_err(SeesawError::I2c)
-    }
+                $async @fn set_neopixel_speed(&mut self, speed: NeopixelSpeed) -> Result<(), SeesawError<D::I2cError>> {
+                    let addr = self.addr();
 
-    fn set_neopixel_color(&mut self, r: u8, g: u8, b: u8) -> Result<(), SeesawError<D::I2cError>> {
-        self.set_nth_neopixel_color(0, r, g, b)
-    }
+                    let speed_bit = match speed {
+                        NeopixelSpeed::Khz400 => 0,
+                        NeopixelSpeed::Khz800 => 1,
+                    };
+                    maybe_async!(
+                            self.driver()
+                                .write_u8(addr, SET_SPEED, speed_bit)
+                        => $async.await)?;
+                    maybe_async!(
+                            self.driver().delay().delay_us(10_000)
+                        => $async.await);
+                    Ok(())
+                }
 
-    fn set_nth_neopixel_color(
-        &mut self,
-        n: u16,
-        r: u8,
-        g: u8,
-        b: u8,
-    ) -> Result<(), SeesawError<D::I2cError>> {
-        assert!(n < Self::N_LEDS);
-        let [zero, one] = u16::to_be_bytes(3 * n);
-        let addr = self.addr();
+                $async @fn set_neopixel_color(&mut self, r: u8, g: u8, b: u8) -> Result<(), SeesawError<D::I2cError>> {
+                    maybe_async!(
+                            self.set_nth_neopixel_color(0, r, g, b)
+                        => $async.await)
+                }
 
-        self.driver()
-            .register_write(addr, SET_BUF, &[zero, one, r, g, b, 0x00])
-            .map_err(SeesawError::I2c)
-    }
+                $async @fn set_nth_neopixel_color(
+                    &mut self,
+                    n: u16,
+                    r: u8,
+                    g: u8,
+                    b: u8,
+                ) -> Result<(), SeesawError<D::I2cError>> {
+                    assert!(n < Self::N_LEDS);
+                    let [zero, one] = u16::to_be_bytes(3 * n);
+                    let addr = self.addr();
 
-    fn set_neopixel_colors(
-        &mut self,
-        colors: &[(u8, u8, u8); Self::N_LEDS as usize],
-    ) -> Result<(), SeesawError<D::I2cError>>
-    where
-        [(); Self::N_LEDS as usize]: Sized,
-    {
-        let addr = self.addr();
+                    maybe_async!(
+                            self.driver()
+                                .register_write(addr, SET_BUF, &[zero, one, r, g, b, 0x00])
+                        => $async.await)?;
+                    Ok(())
+                }
 
-        (0..Self::N_LEDS)
-            .try_for_each(|n| {
-                let [zero, one] = u16::to_be_bytes(3 * n);
-                let color = colors[n as usize];
-                self.driver().register_write(
-                    addr,
-                    SET_BUF,
-                    &[zero, one, color.0, color.1, color.2, 0x00],
-                )
-            })
-            .map_err(SeesawError::I2c)
-    }
+                $async @fn set_neopixel_colors(
+                    &mut self,
+                    colors: &[(u8, u8, u8); Self::N_LEDS as usize],
+                ) -> Result<(), SeesawError<D::I2cError>>
+                where
+                    [(); Self::N_LEDS as usize]: Sized,
+                {
+                    let addr = self.addr();
 
-    fn sync_neopixel(&mut self) -> Result<(), SeesawError<D::I2cError>> {
-        let addr = self.addr();
+                    for n in 0..Self::N_LEDS {
+                        let [zero, one] = u16::to_be_bytes(3 * n);
+                        let color = colors[n as usize];
+                        maybe_async!(
+                                self.driver().register_write(
+                                    addr,
+                                    SET_BUF,
+                                    &[zero, one, color.0, color.1, color.2, 0x00],
+                                )
+                            => $async.await)?;
+                    }
+                    Ok(())
+                }
 
-        self.driver()
-            .register_write(addr, SHOW, &[])
-            .map(|_| self.driver().delay().delay_us(125))
-            .map_err(SeesawError::I2c)
-    }
+                $async @fn sync_neopixel(&mut self) -> Result<(), SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+
+                    maybe_async!(
+                            self.driver()
+                                .register_write(addr, SHOW, &[])
+                        => $async.await)?;
+                    maybe_async!(
+                            self.driver().delay().delay_us(125)
+                        => $async.await);
+                    Ok(())
+                }
+            }
+        }
+    };
+}
+
+neopixel_def! {
+    for blocking;
+    neopixel { NeopixelModule<Driver> }
+    seesaw_device { SeesawDevice }
+}
+neopixel_def! {
+    for async;
+    neopixel { NeopixelModuleAsync<DriverAsync> }
+    seesaw_device { SeesawDeviceAsync }
 }
 
 /// NeopixelModule: The Neopixel protocol speed
