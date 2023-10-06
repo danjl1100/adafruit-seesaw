@@ -1,4 +1,7 @@
-use crate::common::{Modules, Reg};
+use crate::{
+    common::{Modules, Reg},
+    maybe_async, Driver, DriverAsync, DriverExt, DriverExtAsync, SeesawDevice, SeesawDeviceAsync,
+};
 
 /// WO - 32 bits
 /// Writing a 1 to any bit in this register sets the direction of the
@@ -68,133 +71,113 @@ const PULL_ENABLE: &Reg = &[Modules::Gpio.into_u8(), 0x0B];
 #[allow(dead_code)]
 const PULL_DISABLE: &Reg = &[Modules::Gpio.into_u8(), 0x0C];
 
-pub use blocking::GpioModule;
-mod blocking {
-    use super::*;
-    use crate::DriverExt;
+macro_rules! gpio_module_def {
+    (
+        for $async:ident;
+        gpio_module { $name:ident < $driver:ident > }
+        seesaw_device { $seesaw_device:ident }
+    ) => {
+        /// The GPIO module provides every day input and outputs. You'll get logic
+        /// GPIO pins that can act as outputs or inputs. With pullups or
+        /// pulldowns. When inputs, you can also create pin-change interrupts
+        /// that are routed the the IRQ pin.
+        ///
+        /// On SAMD09-based boards the GPIO is 3V only.
+        ///
+        /// On ATtiny-based boards, the GPIO logic is whatever the power pin is, 3V
+        /// or 5V.
+        ///
+        /// The module base register address for the GPIO module is 0x01.
+        pub trait $name<D: $driver>: $seesaw_device<Driver = D> {
 
-    /// The GPIO module provides every day input and outputs. You'll get logic
-    /// GPIO pins that can act as outputs or inputs. With pullups or
-    /// pulldowns. When inputs, you can also create pin-change interrupts
-    /// that are routed the the IRQ pin.
-    ///
-    /// On SAMD09-based boards the GPIO is 3V only.
-    ///
-    /// On ATtiny-based boards, the GPIO logic is whatever the power pin is, 3V
-    /// or 5V.
-    ///
-    /// The module base register address for the GPIO module is 0x01.
-    pub trait GpioModule<D: crate::Driver>: crate::SeesawDevice<Driver = D> {
-        fn digital_read(&mut self, pin: u8) -> Result<bool, crate::SeesawError<D::I2cError>> {
-            self.digital_read_bulk()
-                .map(|pins| !matches!(pins >> pin & 0x1, 1))
-        }
+            maybe_async! {
 
-        fn digital_read_bulk(&mut self) -> Result<u32, crate::SeesawError<D::I2cError>> {
-            let addr = self.addr();
-            self.driver()
-                .read_u32(addr, GPIO)
-                .map_err(crate::SeesawError::I2c)
-        }
-
-        fn set_pin_mode(
-            &mut self,
-            pin: u8,
-            mode: PinMode,
-        ) -> Result<(), crate::SeesawError<D::I2cError>> {
-            self.set_pin_mode_bulk(1 << pin, mode)
-        }
-
-        fn set_pin_mode_bulk(
-            &mut self,
-            pins: u32,
-            mode: PinMode,
-        ) -> Result<(), crate::SeesawError<D::I2cError>> {
-            let addr = self.addr();
-            let bus = self.driver();
-
-            match mode {
-                PinMode::Output => {
-                    bus.write_u32(addr, GPIO, pins)?;
+                $async @fn digital_read(&mut self, pin: u8) -> Result<bool, crate::SeesawError<D::I2cError>> {
+                    let pins = maybe_async!(
+                            self.digital_read_bulk()
+                        => $async.await)?;
+                    let value = !matches!(pins >> pin & 0x1, 1);
+                    Ok(value)
                 }
-                PinMode::Input => {
-                    bus.write_u32(addr, SET_INPUT, pins)?;
+
+                $async @fn digital_read_bulk(&mut self) -> Result<u32, crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+                    let value = maybe_async!(
+                            self.driver().read_u32(addr, GPIO)
+                        => $async.await)?;
+                    Ok(value)
                 }
-                PinMode::InputPullup => {
-                    bus.write_u32(addr, SET_INPUT, pins)?;
-                    bus.write_u32(addr, PULL_ENABLE, pins)?;
-                    bus.write_u32(addr, SET_HIGH, pins)?;
+
+                $async @fn set_pin_mode(
+                    &mut self,
+                    pin: u8,
+                    mode: PinMode,
+                ) -> Result<(), crate::SeesawError<D::I2cError>> {
+                    maybe_async!(
+                            self.set_pin_mode_bulk(1 << pin, mode)
+                        => $async.await)
                 }
-                PinMode::InputPulldown => {
-                    bus.write_u32(addr, SET_INPUT, pins)?;
-                    bus.write_u32(addr, PULL_ENABLE, pins)?;
-                    bus.write_u32(addr, SET_LOW, pins)?;
+
+                $async @fn set_pin_mode_bulk(
+                    &mut self,
+                    pins: u32,
+                    mode: PinMode,
+                ) -> Result<(), crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+                    let bus = self.driver();
+
+                    match mode {
+                        PinMode::Output => {
+                            maybe_async!(
+                                    bus.write_u32(addr, GPIO, pins)
+                                => $async.await)?;
+                        }
+                        PinMode::Input => {
+                            maybe_async!(
+                                    bus.write_u32(addr, SET_INPUT, pins)
+                                => $async.await)?;
+                        }
+                        PinMode::InputPullup => {
+                            maybe_async!(
+                                    bus.write_u32(addr, SET_INPUT, pins)
+                                => $async.await)?;
+                            maybe_async!(
+                                    bus.write_u32(addr, PULL_ENABLE, pins)
+                                => $async.await)?;
+                            maybe_async!(
+                                    bus.write_u32(addr, SET_HIGH, pins)
+                                => $async.await)?;
+                        }
+                        PinMode::InputPulldown => {
+                            maybe_async!(
+                                    bus.write_u32(addr, SET_INPUT, pins)
+                                => $async.await)?;
+                            maybe_async!(
+                                    bus.write_u32(addr, PULL_ENABLE, pins)
+                                => $async.await)?;
+                            maybe_async!(
+                                    bus.write_u32(addr, SET_LOW, pins)
+                                => $async.await)?;
+                        }
+                        _ => unimplemented!("Other pins modes are not supported."),
+                    }
+                    Ok(())
                 }
-                _ => unimplemented!("Other pins modes are not supported."),
+
             }
-            Ok(())
         }
-    }
+    };
 }
 
-pub use non_blocking::GpioModuleAsync;
-mod non_blocking {
-    use super::*;
-    use crate::DriverExtAsync;
-
-    pub trait GpioModuleAsync<D: crate::DriverAsync>: crate::SeesawDeviceAsync<Driver = D> {
-        async fn digital_read(&mut self, pin: u8) -> Result<bool, crate::SeesawError<D::I2cError>> {
-            self.digital_read_bulk()
-                .await
-                .map(|pins| !matches!(pins >> pin & 0x1, 1))
-        }
-
-        async fn digital_read_bulk(&mut self) -> Result<u32, crate::SeesawError<D::I2cError>> {
-            let addr = self.addr();
-            self.driver()
-                .read_u32(addr, GPIO)
-                .await
-                .map_err(crate::SeesawError::I2c)
-        }
-
-        async fn set_pin_mode(
-            &mut self,
-            pin: u8,
-            mode: PinMode,
-        ) -> Result<(), crate::SeesawError<D::I2cError>> {
-            self.set_pin_mode_bulk(1 << pin, mode).await
-        }
-
-        async fn set_pin_mode_bulk(
-            &mut self,
-            pins: u32,
-            mode: PinMode,
-        ) -> Result<(), crate::SeesawError<D::I2cError>> {
-            let addr = self.addr();
-            let bus = self.driver();
-
-            match mode {
-                PinMode::Output => {
-                    bus.write_u32(addr, GPIO, pins).await?;
-                }
-                PinMode::Input => {
-                    bus.write_u32(addr, SET_INPUT, pins).await?;
-                }
-                PinMode::InputPullup => {
-                    bus.write_u32(addr, SET_INPUT, pins).await?;
-                    bus.write_u32(addr, PULL_ENABLE, pins).await?;
-                    bus.write_u32(addr, SET_HIGH, pins).await?;
-                }
-                PinMode::InputPulldown => {
-                    bus.write_u32(addr, SET_INPUT, pins).await?;
-                    bus.write_u32(addr, PULL_ENABLE, pins).await?;
-                    bus.write_u32(addr, SET_LOW, pins).await?;
-                }
-                _ => unimplemented!("Other pins modes are not supported."),
-            }
-            Ok(())
-        }
-    }
+gpio_module_def! {
+    for blocking;
+    gpio_module { GpioModule<Driver> }
+    seesaw_device { SeesawDevice }
+}
+gpio_module_def! {
+    for async;
+    gpio_module { GpioModuleAsync<DriverAsync> }
+    seesaw_device { SeesawDeviceAsync }
 }
 
 #[derive(Clone, Copy, Debug)]
