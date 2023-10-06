@@ -22,14 +22,14 @@ fn main() -> ! {
     let sda = gpiob.pb7.into_alternate_open_drain::<4>();
     let mut i2c = I2c::new(dp.I2C1, (scl, sda), 100.kHz(), &clocks);
     let mut seesaw = Seesaw::new(delay);
-    let mut neokeys = NeoKey1x4::new_with_default_addr()
-        .with_driver(seesaw.borrow_i2c(&mut i2c))
-        .init()
-        .expect("Failed to start NeoKey1x4");
+    let neokeys = NeoKey1x4::new_with_default_addr();
+    let mut neokeys = neokeys.with_driver(seesaw.borrow_i2c(&mut i2c));
+    neokeys.init().expect("Failed to start NeoKey1x4");
 
     loop {
         let keys = neokeys.keys().expect("Failed to read keys");
 
+        #[allow(clippy::identity_op)]
         neokeys
             .set_neopixel_colors(&[
                 if (keys >> 0) & 1 == 0 { GREEN } else { RED },

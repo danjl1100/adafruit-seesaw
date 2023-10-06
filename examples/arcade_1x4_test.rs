@@ -19,10 +19,9 @@ fn main() -> ! {
     let sda = gpiob.pb7.into_alternate_open_drain::<4>();
     let mut i2c = I2c::new(dp.I2C1, (scl, sda), 100.kHz(), &clocks);
     let mut seesaw = Seesaw::new(delay);
-    let mut arcade = ArcadeButton1x4::new_with_default_addr()
-        .with_driver(seesaw.borrow_i2c(&mut i2c))
-        .init()
-        .expect("Failed to start ArcadeButton1x4");
+    let arcade = ArcadeButton1x4::new_with_default_addr();
+    let mut arcade = arcade.with_driver(seesaw.borrow_i2c(&mut i2c));
+    arcade.init().expect("Failed to start ArcadeButton1x4");
 
     loop {
         let buttons = arcade.button_values().expect("Failed to get button values");

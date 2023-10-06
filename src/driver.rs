@@ -139,7 +139,7 @@ mod blocking {
         }
     }
 }
-pub use non_blocking::{DriverAsync, DriverExtAsync, I2cDriverAsync};
+pub use non_blocking::{DelayAsync, DriverAsync, DriverExtAsync, I2cDriverAsync};
 mod non_blocking {
     use super::DELAY_TIME_MICROS;
     use crate::common::Reg;
@@ -159,29 +159,17 @@ mod non_blocking {
         type I2cError = T::Error;
     }
 
+    pub trait DelayAsync {
+        async fn delay_us(&mut self, duration_micros: u32);
+    }
+
     pub trait DriverAsync {
+        type Delay: DelayAsync;
         type I2cError: From<<Self::I2c as i2c::ErrorType>::Error>;
         type I2c: I2cDriverAsync;
         fn i2c(&mut self) -> &mut Self::I2c;
-        async fn delay(&mut self, duration_micros: u32);
+        fn delay(&mut self) -> &mut Self::Delay;
     }
-    // NEED externally-provided Delay implementation
-    // impl<T> Driver for T
-    // where
-    //     T: I2cDriver + delay::DelayUs,
-    // {
-    //     type Delay = Self;
-    //     type I2c = Self;
-    //     type I2cError = <T as i2c::ErrorType>::Error;
-
-    //     fn i2c(&mut self) -> &mut Self::I2c {
-    //         self
-    //     }
-
-    //     fn delay(&mut self) -> &mut Self::Delay {
-    //         self
-    //     }
-    // }
 
     macro_rules! impl_integer_write {
         ($fn:ident $nty:tt) => {
@@ -247,6 +235,7 @@ mod non_blocking {
         impl_integer_write! { write_i64 i64 }
     }
 
+    // TODO: consider a def macro for DriverExt implementations, to ensure identical
     impl<T: DriverAsync> DriverExtAsync for T {
         type Error = T::I2cError;
 
@@ -257,7 +246,7 @@ mod non_blocking {
         ) -> Result<[u8; N], Self::Error> {
             let mut buffer = [0u8; N];
             self.i2c().write(addr, reg).await?;
-            self.delay(DELAY_TIME_MICROS).await;
+            self.delay().delay_us(DELAY_TIME_MICROS).await;
             self.i2c().read(addr, &mut buffer).await?;
             Ok(buffer)
         }
@@ -276,7 +265,7 @@ mod non_blocking {
             buffer[2..].copy_from_slice(bytes);
 
             self.i2c().write(addr, &buffer).await?;
-            self.delay(DELAY_TIME_MICROS).await;
+            self.delay().delay_us(DELAY_TIME_MICROS).await;
             Ok(())
         }
     }

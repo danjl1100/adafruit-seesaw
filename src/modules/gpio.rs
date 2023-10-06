@@ -142,7 +142,7 @@ mod non_blocking {
     use super::*;
     use crate::DriverExtAsync;
 
-    pub trait GpioModuleAsync<D: crate::DriverAsync>: crate::SeesawDevice<Driver = D> {
+    pub trait GpioModuleAsync<D: crate::DriverAsync>: crate::SeesawDeviceAsync<Driver = D> {
         async fn digital_read(&mut self, pin: u8) -> Result<bool, crate::SeesawError<D::I2cError>> {
             self.digital_read_bulk()
                 .await

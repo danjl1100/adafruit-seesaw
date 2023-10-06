@@ -29,21 +29,23 @@ pub struct Seesaw<DELAY> {
 }
 pub struct SeesawBorrowed<'a, DELAY, I2C> {
     delay: &'a mut DELAY,
-    i2c: &'a mut I2C,
+    i2c: I2C,
 }
 
-impl<DELAY> Seesaw<DELAY>
-where
-    DELAY: DelayUs,
-{
+impl<DELAY> Seesaw<DELAY> {
     pub fn new(delay: DELAY) -> Self {
         Seesaw { delay }
     }
 
-    pub fn borrow_i2c<'a, I2C: I2cDriver>(
-        &'a mut self,
-        i2c: &'a mut I2C,
-    ) -> SeesawBorrowed<'a, DELAY, I2C> {
+    pub fn borrow_i2c<I2C: I2cDriver>(&mut self, i2c: I2C) -> SeesawBorrowed<'_, DELAY, I2C> {
+        let Self { delay, .. } = self;
+        SeesawBorrowed { delay, i2c }
+    }
+
+    pub fn borrow_i2c_async<I2C: I2cDriverAsync>(
+        &mut self,
+        i2c: I2C,
+    ) -> SeesawBorrowed<'_, DELAY, I2C> {
         let Self { delay, .. } = self;
         SeesawBorrowed { delay, i2c }
     }
@@ -59,7 +61,7 @@ where
     type I2cError = I2C::Error;
 
     fn delay(&mut self) -> &mut Self::Delay {
-        &mut self.delay
+        self.delay
     }
 
     fn i2c(&mut self) -> &mut Self::I2c {
@@ -72,15 +74,16 @@ where
     DELAY: DelayAsync,
     I2C: I2cDriverAsync,
 {
+    type Delay = DELAY;
     type I2c = I2C;
     type I2cError = I2C::Error;
 
-    fn i2c(&mut self) -> &mut Self::I2c {
-        &mut self.i2c
+    fn delay(&mut self) -> &mut Self::Delay {
+        self.delay
     }
 
-    async fn delay(&mut self, duration_micros: u32) {
-        self.delay.delay(duration_micros).await;
+    fn i2c(&mut self) -> &mut Self::I2c {
+        &mut self.i2c
     }
 }
 
@@ -97,36 +100,47 @@ impl<E> From<E> for SeesawError<E> {
     }
 }
 
-pub trait SeesawDevice {
-    type Error;
-    type Driver: Driver;
+macro_rules! seesaw_device_def {
+    (
+        for $async:ident;
+        device { $device_name:ident < $driver:ident >  }
+        device_init { $device_init_name:ident }
+    ) => {
+        pub trait $device_name {
+            type Error;
+            type Driver: $driver;
 
-    const DEFAULT_ADDR: u8;
-    const HARDWARE_ID: HardwareId;
-    const PRODUCT_ID: u16;
+            const DEFAULT_ADDR: u8;
+            const HARDWARE_ID: HardwareId;
+            const PRODUCT_ID: u16;
 
-    fn addr(&self) -> u8;
+            fn addr(&self) -> u8;
 
-    fn driver(&mut self) -> &mut Self::Driver;
-
-    // fn new(addr: u8, driver: Self::Driver) -> Self;
-
-    // fn new_with_default_addr(driver: Self::Driver) -> Self;
+            fn driver(&mut self) -> &mut Self::Driver;
+        }
+        /// At startup, Seesaw devices typically have a unique set of initialization
+        /// calls to be made. e.g. for a Neokey1x4, we're need to enable the on-board
+        /// neopixel and also do some pin mode setting to get everything working.
+        /// All devices implement `DeviceInit` with a set of sensible defaults. You can
+        /// override the default initialization function with your own by calling
+        /// `Seesaw::connect_with` instead of `Seesaw::connect`.
+        pub trait $device_init_name<D: $driver>: $device_name<Driver = D>
+        where
+            Self: Sized,
+        {
+            maybe_async! {
+                $async @fn init (&mut self) -> Result<(), Self::Error>;
+            }
+        }
+    };
 }
-
-/// At startup, Seesaw devices typically have a unique set of initialization
-/// calls to be made. e.g. for a Neokey1x4, we're need to enable the on-board
-/// neopixel and also do some pin mode setting to get everything working.
-/// All devices implement `DeviceInit` with a set of sensible defaults. You can
-/// override the default initialization function with your own by calling
-/// `Seesaw::connect_with` instead of `Seesaw::connect`.
-pub trait SeesawDeviceInit<D: Driver>: SeesawDevice<Driver = D>
-where
-    Self: Sized,
-{
-    fn init(self) -> Result<Self, Self::Error>;
+seesaw_device_def! {
+    for blocking;
+    device { SeesawDevice <Driver> }
+    device_init { SeesawDeviceInit }
 }
-
-pub trait DelayAsync {
-    async fn delay(&mut self, duration_micros: u32);
+seesaw_device_def! {
+    for async;
+    device { SeesawDeviceAsync <DriverAsync> }
+    device_init { SeesawDeviceInitAsync }
 }

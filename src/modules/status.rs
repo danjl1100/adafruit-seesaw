@@ -1,4 +1,7 @@
-use crate::{driver::Driver, DriverExt, Modules, Reg, SeesawDevice};
+use crate::{
+    driver::Driver, maybe_async, DelayAsync, DriverAsync, DriverExt, DriverExtAsync, Modules, Reg,
+    SeesawDevice, SeesawDeviceAsync,
+};
 use embedded_hal::delay::DelayUs;
 
 const STATUS_HW_ID: &Reg = &[Modules::Status.into_u8(), 0x01];
@@ -7,58 +10,89 @@ const STATUS_OPTIONS: &Reg = &[Modules::Status.into_u8(), 0x03];
 const STATUS_TEMP: &Reg = &[Modules::Status.into_u8(), 0x04];
 const STATUS_SWRST: &Reg = &[Modules::Status.into_u8(), 0x7F];
 
-pub trait StatusModule<D: Driver>: SeesawDevice<Driver = D> {
-    fn capabilities(&mut self) -> Result<DeviceCapabilities, crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
+macro_rules! seesaw_device_def {
+    (
+       for $async:ident;
+       status_module { $status_module_name:ident < $driver:path > }
+       seesaw_device { $seesaw_device_name:ident }
+   ) => {
+        pub trait $status_module_name<D: $driver>: $seesaw_device_name<Driver = D> {
+            maybe_async! {
+                $async @fn capabilities(
+                    &mut self,
+                ) -> Result<DeviceCapabilities, crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
 
-        self.driver()
-            .read_u32(addr, STATUS_OPTIONS)
-            .map(|opts| opts.into())
-            .map_err(crate::SeesawError::I2c)
-    }
+                    let cap = maybe_async!(
+                            self.driver().read_u32(addr, STATUS_OPTIONS)
+                        => $async.await)?;
+                    Ok(DeviceCapabilities::from(cap))
+                }
 
-    fn hardware_id(&mut self) -> Result<u8, crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
-        self.driver()
-            .read_u8(addr, STATUS_HW_ID)
-            .map_err(crate::SeesawError::I2c)
-    }
+                $async @fn hardware_id(&mut self) -> Result<u8, crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+                    let hardware_id = maybe_async!(
+                            self.driver().read_u8(addr, STATUS_HW_ID)
+                        => $async.await)?;
+                    Ok(hardware_id)
+                }
 
-    fn product_info(&mut self) -> Result<ProductDateCode, crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
+                $async @fn product_info(
+                    &mut self,
+                ) -> Result<ProductDateCode, crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
 
-        self.driver()
-            .read_u32(addr, STATUS_VERSION)
-            .map(|version| version.into())
-            .map_err(crate::SeesawError::I2c)
-    }
+                    let version = maybe_async!(
+                            self.driver().read_u32(addr, STATUS_VERSION)
+                        => $async.await)?;
+                    Ok(ProductDateCode::from(version))
+                }
 
-    fn reset(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
+                $async @fn reset(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
 
-        self.driver()
-            .write_u8(addr, STATUS_SWRST, 0xFF)
-            .map(|_| self.driver().delay().delay_us(125_000))
-            .map_err(crate::SeesawError::I2c)
-    }
+                    maybe_async!(
+                            self.driver().write_u8(addr, STATUS_SWRST, 0xFF)
+                        => $async.await)?;
+                    maybe_async!(
+                            self.driver().delay().delay_us(125_000)
+                        => $async.await);
+                    Ok(())
+                }
 
-    fn reset_and_verify_seesaw(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
-        let hw_id = Self::HARDWARE_ID;
-        self.reset().and_then(|_| match self.hardware_id() {
-            Ok(id) if id == hw_id.into() => Ok(()),
-            Ok(id) => Err(crate::SeesawError::InvalidHardwareId(id)),
-            Err(e) => Err(e),
-        })
-    }
+                $async @fn reset_and_verify_seesaw(
+                    &mut self,
+                ) -> Result<(), crate::SeesawError<D::I2cError>> {
+                    let hw_id = Self::HARDWARE_ID;
+                    maybe_async!(self.reset() => $async.await)?;
+                    let current_id = maybe_async!(self.hardware_id() => $async.await)?;
+                    if current_id == hw_id.into() {
+                        Ok(())
+                    } else {
+                        Err(crate::SeesawError::InvalidHardwareId(current_id))
+                    }
+                }
 
-    fn temp(&mut self) -> Result<f32, crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
+                $async @fn temp(&mut self) -> Result<f32, crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
 
-        self.driver()
-            .read_u32(addr, STATUS_TEMP)
-            .map(|buf| (buf as f32 / (1u32 << 16) as f32))
-            .map_err(crate::SeesawError::I2c)
-    }
+                    let temp_buf = maybe_async!(self.driver().read_u32(addr, STATUS_TEMP) => $async.await)?;
+                    Ok(temp_buf as f32 / (1u32 << 16) as f32)
+                }
+            }
+        }
+    };
+}
+
+seesaw_device_def! {
+    for blocking;
+    status_module { StatusModule<Driver> }
+    seesaw_device { SeesawDevice }
+}
+seesaw_device_def! {
+    for async;
+    status_module { StatusModuleAsync<DriverAsync> }
+    seesaw_device { SeesawDeviceAsync }
 }
 
 /// StatusModule

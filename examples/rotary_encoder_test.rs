@@ -21,10 +21,9 @@ fn main() -> ! {
     let mut i2c = I2c::new(dp.I2C1, (scl, sda), 400.kHz(), &clocks);
     let mut seesaw = Seesaw::new(delay);
     rprintln!("Seesaw created");
-    let mut encoder = RotaryEncoder::new_with_default_addr()
-        .with_driver(seesaw.borrow_i2c(&mut i2c))
-        .init()
-        .expect("Failed to start RotaryEncoder");
+    let encoder = RotaryEncoder::new_with_default_addr();
+    let mut encoder = encoder.with_driver(seesaw.borrow_i2c(&mut i2c));
+    encoder.init().expect("Failed to start RotaryEncoder");
 
     rprintln!(
         "Capabilities {:#?}",

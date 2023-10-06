@@ -19,14 +19,13 @@ fn main() -> ! {
     let sda = gpiob.pb7.into_alternate_open_drain::<4>();
     let mut i2c = I2c::new(dp.I2C1, (scl, sda), 100.kHz(), &clocks);
     let mut seesaw = Seesaw::new(delay);
-    let mut neoslider = NeoSlider::new_with_default_addr()
-        .with_driver(seesaw.borrow_i2c(&mut i2c))
-        .init()
-        .expect("Failed to start NeoSlider");
+    let neoslider = NeoSlider::new_with_default_addr();
+    let mut neoslider = neoslider.with_driver(seesaw.borrow_i2c(&mut i2c));
+    neoslider.init().expect("Failed to start NeoSlider");
 
     loop {
         let value = neoslider.slider_value().expect("Failed to read slider");
-        let color = color_wheel((value / 3 & 0xFF) as u8);
+        let color = color_wheel(((value / 3) & 0xFF) as u8);
         neoslider
             .set_neopixel_colors(&[color.into(), color.into(), color.into(), color.into()])
             .and_then(|_| neoslider.sync_neopixel())

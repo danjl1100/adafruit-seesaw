@@ -27,10 +27,9 @@ fn main() -> ! {
     //
     // let bus = shared_bus::BusManagerSimple::new(i2c);
     let mut seesaw = Seesaw::new(delay);
-    let mut device = GenericDevice::new_with_default_addr()
-        .with_driver(seesaw.borrow_i2c(&mut i2c))
-        .init()
-        .expect("Failed to init generic device");
+    let device = GenericDevice::new_with_default_addr();
+    let mut device = device.with_driver(seesaw.borrow_i2c(&mut i2c));
+    device.init().expect("Failed to init generic device");
 
     let id = device.hardware_id().expect("Failed to get hardware id");
     rprintln!("Hardware ID {:?}", id);
@@ -42,6 +41,7 @@ fn main() -> ! {
         "Product info {:#?}",
         device.product_info().expect("failed to get product info")
     );
+    #[allow(clippy::empty_loop)]
     loop {}
 }
 

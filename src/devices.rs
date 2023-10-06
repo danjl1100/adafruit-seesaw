@@ -5,14 +5,15 @@ use crate::{
         encoder::EncoderModule,
         gpio::{GpioModule, PinMode},
         neopixel::NeopixelModule,
-        status::StatusModule,
+        status::{StatusModule, StatusModuleAsync},
         timer::TimerModule,
     },
-    seesaw_device, HardwareId, SeesawDeviceInit,
+    seesaw_device, DriverAsync, HardwareId, SeesawDeviceInit,
 };
 
 /// All devices implement the status module
 impl<D: Driver, T: super::SeesawDevice<Driver = D>> StatusModule<D> for T {}
+impl<D: DriverAsync, T: super::SeesawDeviceAsync<Driver = D>> StatusModuleAsync<D> for T {}
 
 seesaw_device! {
     #[doc(hidden)]
@@ -24,8 +25,8 @@ seesaw_device! {
 }
 
 impl<D: Driver> SeesawDeviceInit<D> for GenericDevice<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
-        self.reset().map(|_| self)
+    fn init(&mut self) -> Result<(), Self::Error> {
+        self.reset()
     }
 }
 
@@ -57,10 +58,9 @@ seesaw_device! {
 }
 
 impl<D: Driver> SeesawDeviceInit<D> for ArcadeButton1x4<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
+    fn init(&mut self) -> Result<(), Self::Error> {
         self.reset_and_verify_seesaw()
             .and_then(|_| self.enable_buttons())
-            .map(|_| self)
     }
 }
 
@@ -102,11 +102,10 @@ seesaw_device! {
 }
 
 impl<D: Driver> SeesawDeviceInit<D> for NeoKey1x4<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
+    fn init(&mut self) -> Result<(), Self::Error> {
         self.reset_and_verify_seesaw()
             .and_then(|_| self.enable_neopixel())
             .and_then(|_| self.enable_button_pins())
-            .map(|_| self)
     }
 }
 
@@ -137,10 +136,9 @@ seesaw_device!(
 );
 
 impl<D: Driver> SeesawDeviceInit<D> for NeoSlider<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
+    fn init(&mut self) -> Result<(), Self::Error> {
         self.reset_and_verify_seesaw()
             .and_then(|_| self.enable_neopixel())
-            .map(|_| self)
     }
 }
 
@@ -164,10 +162,9 @@ seesaw_device! {
 }
 
 impl<D: Driver> SeesawDeviceInit<D> for RotaryEncoder<D> {
-    fn init(mut self) -> Result<Self, Self::Error> {
+    fn init(&mut self) -> Result<(), Self::Error> {
         self.reset_and_verify_seesaw()
             .and_then(|_| self.enable_button())
             .and_then(|_| self.enable_neopixel())
-            .map(|_| self)
     }
 }

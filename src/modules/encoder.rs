@@ -1,7 +1,7 @@
-use super::gpio::{GpioModule, PinMode};
+use super::gpio::{GpioModule, GpioModuleAsync, PinMode};
 use crate::{
     common::{Modules, Reg},
-    DriverExt,
+    maybe_async, DelayAsync, DriverExt, DriverExtAsync,
 };
 use embedded_hal::delay::DelayUs;
 
@@ -12,50 +12,81 @@ const INT_CLR: &Reg = &[Modules::Encoder.into_u8(), 0x20];
 const POSITION: &Reg = &[Modules::Encoder.into_u8(), 0x30];
 const DELTA: &Reg = &[Modules::Encoder.into_u8(), 0x40];
 
-pub trait EncoderModule<D: crate::Driver>: GpioModule<D> {
-    const ENCODER_BTN_PIN: u8;
+macro_rules! encode_module_def {
+    (
+        for $async:ident;
+        module { $module_name:ident < $driver:path > }
+        gpio { $gpio:ident }
+    ) => {
+        pub trait $module_name<D: $driver>: $gpio<D> {
+            const ENCODER_BTN_PIN: u8;
 
-    fn enable_button(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
-        self.set_pin_mode(Self::ENCODER_BTN_PIN, PinMode::InputPullup)
-            .map(|_| self.driver().delay().delay_us(125))
-    }
+            maybe_async! {
 
-    fn button(&mut self) -> Result<bool, crate::SeesawError<D::I2cError>> {
-        self.digital_read(Self::ENCODER_BTN_PIN)
-    }
+                $async @fn enable_button(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
+                    maybe_async!(
+                            self.set_pin_mode(Self::ENCODER_BTN_PIN, PinMode::InputPullup)
+                         => $async.await)?;
+                    self.driver().delay().delay_us(125);
+                    Ok(())
+                }
 
-    fn delta(&mut self) -> Result<i32, crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
-        self.driver()
-            .read_i32(addr, DELTA)
-            .map_err(crate::SeesawError::I2c)
-    }
+                $async @fn button(&mut self) -> Result<bool, crate::SeesawError<D::I2cError>> {
+                    maybe_async!(
+                            self.digital_read(Self::ENCODER_BTN_PIN)
+                        => $async.await)
+                }
 
-    fn disable_interrupt(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
-        self.driver()
-            .write_u8(addr, INT_CLR, 1)
-            .map_err(crate::SeesawError::I2c)
-    }
+                $async @fn delta(&mut self) -> Result<i32, crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+                    let delta = maybe_async!(
+                            self.driver().read_i32(addr, DELTA)
+                        => $async.await)?;
+                    Ok(delta)
+                }
 
-    fn enable_interrupt(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
-        self.driver()
-            .write_u8(addr, INT_SET, 1)
-            .map_err(crate::SeesawError::I2c)
-    }
+                $async @fn disable_interrupt(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+                    maybe_async!(
+                            self.driver().write_u8(addr, INT_CLR, 1)
+                        => $async.await)?;
+                    Ok(())
+                }
 
-    fn position(&mut self) -> Result<i32, crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
-        self.driver()
-            .read_i32(addr, POSITION)
-            .map_err(crate::SeesawError::I2c)
-    }
+                $async @fn enable_interrupt(&mut self) -> Result<(), crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+                    maybe_async!(
+                            self.driver().write_u8(addr, INT_SET, 1)
+                        => $async.await)?;
+                    Ok(())
+                }
 
-    fn set_position(&mut self, pos: i32) -> Result<(), crate::SeesawError<D::I2cError>> {
-        let addr = self.addr();
-        self.driver()
-            .write_i32(addr, POSITION, pos)
-            .map_err(crate::SeesawError::I2c)
-    }
+                $async @fn position(&mut self) -> Result<i32, crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+                    let position = maybe_async!(
+                            self.driver().read_i32(addr, POSITION)
+                        => $async.await)?;
+                    Ok(position)
+                }
+
+                $async @fn set_position(&mut self, pos: i32) -> Result<(), crate::SeesawError<D::I2cError>> {
+                    let addr = self.addr();
+                    maybe_async!(
+                            self.driver().write_i32(addr, POSITION, pos)
+                        => $async.await)?;
+                    Ok(())
+                }
+            }
+        }
+    };
+}
+encode_module_def! {
+    for blocking;
+    module { EncoderModule <crate::Driver> }
+    gpio { GpioModule }
+}
+encode_module_def! {
+    for async;
+    module { EncoderModuleAsync <crate::DriverAsync> }
+    gpio { GpioModuleAsync }
 }
